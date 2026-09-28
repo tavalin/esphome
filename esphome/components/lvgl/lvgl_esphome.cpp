@@ -7,7 +7,10 @@
 #include "core/lv_global.h"
 #include "core/lv_obj_class_private.h"
 
+#include <algorithm>
+#include <cstring>
 #include <numeric>
+
 
 static void *lv_alloc_draw_buf(size_t size, bool internal);
 static void *draw_buf_alloc_cb(size_t size, lv_color_format_t color_format) { return lv_alloc_draw_buf(size, false); };
@@ -17,6 +20,9 @@ static const char *const TAG = "lvgl";
 
 static const size_t MIN_BUFFER_FRAC = 8;     // buffer must be at least 1/8 of the display size
 static const size_t MIN_BUFFER_SIZE = 2048;  // Sensible minimum buffer size
+// write_random_() draws snow blocks of up to SNOW_MAX_SIZE x SNOW_MAX_SIZE pixels into the draw buffer
+static const int32_t SNOW_MAX_SIZE = 32;
+static const size_t SNOW_MIN_BYTES = SNOW_MAX_SIZE * SNOW_MAX_SIZE * sizeof(lv_color_data);
 
 static const char *const EVENT_NAMES[] = {
     "NONE",
@@ -669,8 +675,8 @@ void LvglComponent::write_random_() {
     col = col / this->draw_rounding * this->draw_rounding;
     int32_t row = random_uint32() % height;
     row = row / this->draw_rounding * this->draw_rounding;
-    // size will be between 8 and 32, and a multiple of draw_rounding
-    int32_t size = (random_uint32() % 25 + 8) / this->draw_rounding * this->draw_rounding;
+    // size will be between 8 and SNOW_MAX_SIZE, and a multiple of draw_rounding
+    int32_t size = (random_uint32() % (SNOW_MAX_SIZE - 7) + 8) / this->draw_rounding * this->draw_rounding;
     lv_area_t area{.x1 = col, .y1 = row, .x2 = col + size - 1, .y2 = row + size - 1};
     // clip to display bounds just in case
     if (area.x2 >= width)
@@ -678,10 +684,11 @@ void LvglComponent::write_random_() {
     if (area.y2 >= height)
       area.y2 = height - 1;
 
-    // line_len can't exceed 1024 pixels; fill whole 32-bit words covering that many pixels
-    size_t words = (lv_area_get_width(&area) * lv_area_get_height(&area) * sizeof(lv_color_data) + 3) / 4;
-    for (size_t i = 0; i != words; i++) {
-      reinterpret_cast<uint32_t *>(this->draw_buf_)[i] = random_uint32();
+    // At most SNOW_MAX_SIZE^2 pixels; setup() guarantees the draw buffer holds SNOW_MIN_BYTES.
+    size_t bytes = lv_area_get_width(&area) * lv_area_get_height(&area) * sizeof(lv_color_data);
+    for (size_t i = 0; i < bytes; i += sizeof(uint32_t)) {
+      uint32_t r = random_uint32();
+      std::memcpy(this->draw_buf_ + i, &r, std::min(sizeof(uint32_t), bytes - i));
     }
     this->draw_buffer_(&area, reinterpret_cast<lv_color_data *>(this->draw_buf_));
   }
@@ -759,9 +766,10 @@ void LvglComponent::setup() {
   auto frac = this->buffer_frac_;
   if (frac == 0)
     frac = 1;
-  // The snow effect writes up to 32x32 pixels into the draw buffer, so keep room for that
-  auto buf_bytes = clamp_at_least(width * height / frac * LV_COLOR_DEPTH / 8,
-                                  std::max(MIN_BUFFER_SIZE, 32 * 32 * sizeof(lv_color_data)));
+  // Keep room for write_random_()'s snow blocks at the configured pixel size
+  const size_t min_bytes = std::max(MIN_BUFFER_SIZE, SNOW_MIN_BYTES);
+  const size_t full_bytes = width * height * sizeof(lv_color_data);
+  auto buf_bytes = clamp_at_least(full_bytes / frac, min_bytes);
   void *buffer = nullptr;
   // for small buffers, try to allocate in internal memory first to improve performance
   if (this->buffer_frac_ >= MIN_BUFFER_FRAC / 2)
@@ -771,7 +779,7 @@ void LvglComponent::setup() {
   // if specific buffer size not set and can't get 100%, try for a smaller one
   if (buffer == nullptr && this->buffer_frac_ == 0) {
     frac = MIN_BUFFER_FRAC;
-    buf_bytes /= MIN_BUFFER_FRAC;
+    buf_bytes = clamp_at_least(full_bytes / MIN_BUFFER_FRAC, min_bytes);
     buffer = lv_alloc_draw_buf(buf_bytes, false);  // NOLINT
   }
   this->buffer_frac_ = frac;
