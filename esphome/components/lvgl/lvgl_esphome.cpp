@@ -11,6 +11,9 @@
 #include <cstring>
 #include <numeric>
 
+#ifdef USE_ESP32
+#include "esp_memory_utils.h"
+#endif
 
 static void *lv_alloc_draw_buf(size_t size, bool internal);
 static void *draw_buf_alloc_cb(size_t size, lv_color_format_t color_format) { return lv_alloc_draw_buf(size, false); };
@@ -186,6 +189,13 @@ void LvglComponent::dump_config() {
     }
     ESP_LOGCONFIG(TAG, "  Rotation type: %s", rot_type);
   }
+#ifdef USE_ESP32
+  // Where the buffers landed matters for speed: internal SRAM is much faster than PSRAM.
+  auto region = [](const void *p) { return p == nullptr ? "none" : esp_ptr_external_ram(p) ? "PSRAM" : "internal"; };
+  ESP_LOGCONFIG(TAG, "  Draw buffer: %s", region(this->draw_buf_));
+  if (this->rotation_type_ == RotationType::ROTATION_SOFTWARE)
+    ESP_LOGCONFIG(TAG, "  Rotation buffer: %s", region(this->rotate_buf_));
+#endif
 }
 
 void LvglComponent::set_paused(bool paused, bool show_snow) {
@@ -797,7 +807,12 @@ void LvglComponent::setup() {
   lv_display_set_buffers(this->disp_, this->draw_buf_, nullptr, buf_bytes,
                          this->full_refresh_ ? LV_DISPLAY_RENDER_MODE_FULL : LV_DISPLAY_RENDER_MODE_PARTIAL);
   if (this->rotation_type_ == ROTATION_SOFTWARE) {
-    this->rotate_buf_ = static_cast<lv_color_t *>(lv_alloc_draw_buf(buf_bytes, false));  // NOLINT
+    // Rotation reads the draw buffer and writes this one on every flush, so for small buffers try
+    // internal memory first here too, falling back to PSRAM.
+    if (this->buffer_frac_ >= MIN_BUFFER_FRAC / 2)
+      this->rotate_buf_ = static_cast<lv_color_t *>(lv_alloc_draw_buf(buf_bytes, true));  // NOLINT
+    if (this->rotate_buf_ == nullptr)
+      this->rotate_buf_ = static_cast<lv_color_t *>(lv_alloc_draw_buf(buf_bytes, false));  // NOLINT
     if (this->rotate_buf_ == nullptr) {
       this->status_set_error(LOG_STR("Memory allocation failure"));
       this->mark_failed();
