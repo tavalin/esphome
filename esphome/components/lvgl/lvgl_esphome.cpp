@@ -310,6 +310,8 @@ bool LvglComponent::ppa_rotate_(const lv_color_data *src, lv_color_data *dst, ui
   srm_config.in.block_h = height;
 #if LV_COLOR_DEPTH == 16
   srm_config.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+#elif LV_COLOR_DEPTH == 24
+  srm_config.in.srm_cm = PPA_SRM_COLOR_MODE_RGB888;
 #elif LV_COLOR_DEPTH == 32
   srm_config.in.srm_cm = PPA_SRM_COLOR_MODE_ARGB8888;
 #endif
@@ -319,6 +321,8 @@ bool LvglComponent::ppa_rotate_(const lv_color_data *src, lv_color_data *dst, ui
   srm_config.out.pic_h = out_h;
 #if LV_COLOR_DEPTH == 16
   srm_config.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+#elif LV_COLOR_DEPTH == 24
+  srm_config.out.srm_cm = PPA_SRM_COLOR_MODE_RGB888;
 #elif LV_COLOR_DEPTH == 32
   srm_config.out.srm_cm = PPA_SRM_COLOR_MODE_ARGB8888;
 #endif
@@ -674,9 +678,9 @@ void LvglComponent::write_random_() {
     if (area.y2 >= height)
       area.y2 = height - 1;
 
-    // line_len can't exceed 1024, and minimum buffer size is 2048, so this won't overflow the buffer
-    size_t line_len = lv_area_get_width(&area) * lv_area_get_height(&area) / 2;
-    for (size_t i = 0; i != line_len; i++) {
+    // line_len can't exceed 1024 pixels; fill whole 32-bit words covering that many pixels
+    size_t words = (lv_area_get_width(&area) * lv_area_get_height(&area) * sizeof(lv_color_data) + 3) / 4;
+    for (size_t i = 0; i != words; i++) {
       reinterpret_cast<uint32_t *>(this->draw_buf_)[i] = random_uint32();
     }
     this->draw_buffer_(&area, reinterpret_cast<lv_color_data *>(this->draw_buf_));
@@ -755,7 +759,9 @@ void LvglComponent::setup() {
   auto frac = this->buffer_frac_;
   if (frac == 0)
     frac = 1;
-  auto buf_bytes = clamp_at_least(width * height / frac * LV_COLOR_DEPTH / 8, MIN_BUFFER_SIZE);
+  // The snow effect writes up to 32x32 pixels into the draw buffer, so keep room for that
+  auto buf_bytes = clamp_at_least(width * height / frac * LV_COLOR_DEPTH / 8,
+                                  std::max(MIN_BUFFER_SIZE, 32 * 32 * sizeof(lv_color_data)));
   void *buffer = nullptr;
   // for small buffers, try to allocate in internal memory first to improve performance
   if (this->buffer_frac_ >= MIN_BUFFER_FRAC / 2)
@@ -776,7 +782,7 @@ void LvglComponent::setup() {
   }
   this->draw_buf_ = static_cast<uint8_t *>(buffer);
   this->set_resolution_();
-  lv_display_set_color_format(this->disp_, LV_COLOR_FORMAT_RGB565);
+  lv_display_set_color_format(this->disp_, LV_COLOR_FORMAT_NATIVE);  // RGB565 or RGB888 per LV_COLOR_DEPTH
   lv_display_set_flush_cb(this->disp_, static_flush_cb);
   lv_display_set_user_data(this->disp_, this);
   lv_display_add_event_cb(this->disp_, rounder_cb, LV_EVENT_INVALIDATE_AREA, this);

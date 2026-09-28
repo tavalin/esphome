@@ -46,6 +46,10 @@ namespace esphome::lvgl {
 #if LV_COLOR_DEPTH == 16
 using lv_color_data = uint16_t;
 #endif
+#if LV_COLOR_DEPTH == 24
+// RGB888: lv_color_t is the 3-byte {blue, green, red} struct, so pointer steps and sizes are 3 bytes
+using lv_color_data = lv_color_t;
+#endif
 #if LV_COLOR_DEPTH == 32
 using lv_color_data = uint32_t;
 #endif
@@ -60,7 +64,7 @@ void lv_scale_draw_event_cb(lv_event_t *e, int16_t range_start, int16_t range_en
 #endif
 #if LV_COLOR_DEPTH == 16
 static const display::ColorBitness LV_BITNESS = display::ColorBitness::COLOR_BITNESS_565;
-#elif LV_COLOR_DEPTH == 32
+#elif LV_COLOR_DEPTH == 24 || LV_COLOR_DEPTH == 32
 static const display::ColorBitness LV_BITNESS = display::ColorBitness::COLOR_BITNESS_888;
 #else   // LV_COLOR_DEPTH
 static const display::ColorBitness LV_BITNESS = display::ColorBitness::COLOR_BITNESS_332;

@@ -487,8 +487,11 @@ async def to_code(configs):
     if configs[0].get(df.CONF_THEME, {}).get(df.CONF_DARK_MODE):
         df.add_define("LV_THEME_DEFAULT_DARK", "1")
 
-    # Currently always need RGB565 for the display buffer, and ARGB8888 is used for layer blending
-    lv_image_formats = {"RGB565", "ARGB8888"}
+    # The display buffer uses LVGL's native format (RGB565 or RGB888), and ARGB8888 is used for layer blending
+    lv_image_formats = {
+        "RGB888" if configs[0][CONF_COLOR_DEPTH] == 24 else "RGB565",
+        "ARGB8888",
+    }
     if {
         "drop_shadow_color",
         "drop_shadow_offset_x",
@@ -604,7 +607,8 @@ LVGL_TOP_LEVEL_SCHEMA = (
             cv.GenerateID(CONF_ID): cv.declare_id(LvglComponent),
             cv.GenerateID(CONF_ALIGN_TO_LAMBDA_ID): cv.declare_id(lv_lambda_t),
             cv.GenerateID(df.CONF_DISPLAYS): display_schema,
-            cv.Optional(CONF_COLOR_DEPTH, default=16): cv.one_of(16),
+            # 16 = RGB565, 24 = RGB888 (3 bytes per pixel, for 24-bit displays)
+            cv.Optional(CONF_COLOR_DEPTH, default=16): cv.one_of(16, 24),
             cv.Optional(df.CONF_DEFAULT_FONT, default="montserrat_14"): lvalid.lv_font,
             cv.Optional(df.CONF_FULL_REFRESH, default=False): cv.boolean,
             cv.Optional(df.CONF_UPDATE_WHEN_DISPLAY_IDLE, default=False): cv.boolean,
