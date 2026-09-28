@@ -59,6 +59,8 @@ class MipiDsi final : public display::Display {
   void set_model(const char *model) { this->model_ = model; }
   void set_lane_bit_rate(float lane_bit_rate) { this->lane_bit_rate_ = lane_bit_rate; }
   void set_lanes(uint8_t lanes) { this->lanes_ = lanes; }
+  // DPI line length sent over DSI when it differs from the visible width. 0 = width.
+  void set_dpi_width(size_t dpi_width) { this->dpi_width_ = dpi_width; }
 
   void smark_failed(const LogString *message, esp_err_t err);
 
@@ -84,6 +86,7 @@ class MipiDsi final : public display::Display {
   std::vector<GPIOPin *> enable_pins_{};
   size_t width_{};
   size_t height_{};
+  size_t dpi_width_{0};
   uint16_t hsync_pulse_width_ = 10;
   uint16_t hsync_back_porch_ = 10;
   uint16_t hsync_front_porch_ = 20;

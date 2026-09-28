@@ -69,7 +69,8 @@ ColorBitness = display.display_ns.enum("ColorBitness")
 
 CONF_LANE_BIT_RATE = "lane_bit_rate"
 CONF_LANES = "lanes"
-
+# DPI line length on the DSI link when it exceeds the visible width. 0 = width.
+CONF_DPI_WIDTH = "dpi_width"
 DsiDriverChip("CUSTOM")
 
 # Import all models dynamically from the models package
@@ -138,6 +139,7 @@ def model_schema(config):
             model.option(CONF_VSYNC_PULSE_WIDTH): cv.int_,
             model.option(CONF_VSYNC_BACK_PORCH): cv.int_,
             model.option(CONF_VSYNC_FRONT_PORCH): cv.int_,
+            model.option(CONF_DPI_WIDTH, 0): cv.int_range(min=0, max=4095),
         }
     )
     return cv.All(
@@ -158,6 +160,14 @@ def _config_schema(config):
     config = model_schema(config)(config)
     model = MODELS[config[CONF_MODEL].upper()]
     model.check_requirements()
+    dpi_width = config[CONF_DPI_WIDTH]
+    if dpi_width:
+        visible_width = model.get_dimensions(config)[0]
+        if dpi_width < visible_width:
+            raise cv.Invalid(
+                f"dpi_width ({dpi_width}) must be >= the visible width ({visible_width})",
+                [CONF_DPI_WIDTH],
+            )
     width, height, _offset_width, _offset_height, _pad_width, _pad_height = (
         model.get_dimensions(config)
     )
@@ -212,6 +222,8 @@ async def to_code(config):
     cg.add(var.set_pclk_frequency(config[CONF_PCLK_FREQUENCY] / 1.0e6))
     cg.add(var.set_lanes(int(config[CONF_LANES])))
     cg.add(var.set_lane_bit_rate(config[CONF_LANE_BIT_RATE] / 1.0e6))
+    if config[CONF_DPI_WIDTH]:
+        cg.add(var.set_dpi_width(config[CONF_DPI_WIDTH]))
     if reset_pin := config.get(CONF_RESET_PIN):
         reset = await cg.gpio_pin_expression(reset_pin)
         cg.add(var.set_reset_pin(reset))
