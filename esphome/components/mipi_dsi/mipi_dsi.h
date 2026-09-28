@@ -61,6 +61,9 @@ class MipiDsi final : public display::Display {
   void set_lanes(uint8_t lanes) { this->lanes_ = lanes; }
   // DPI line length sent over DSI when it differs from the visible width. 0 = width.
   void set_dpi_width(size_t dpi_width) { this->dpi_width_ = dpi_width; }
+  // Send the init sequence before starting DPI video (for panels whose LP commands
+  // cannot complete inside short video blanking periods).
+  void set_init_before_video(bool init_before_video) { this->init_before_video_ = init_before_video; }
 
   void smark_failed(const LogString *message, esp_err_t err);
 
@@ -82,11 +85,13 @@ class MipiDsi final : public display::Display {
   void write_to_display_(int x_start, int y_start, int w, int h, const uint8_t *ptr, int x_offset, int y_offset,
                          int x_pad);
   bool check_buffer_();
+  bool send_init_sequence_(uint32_t sleep_out_ready_ms);
   GPIOPin *reset_pin_{nullptr};
   std::vector<GPIOPin *> enable_pins_{};
   size_t width_{};
   size_t height_{};
   size_t dpi_width_{0};
+  bool init_before_video_{false};
   uint16_t hsync_pulse_width_ = 10;
   uint16_t hsync_back_porch_ = 10;
   uint16_t hsync_front_porch_ = 20;
